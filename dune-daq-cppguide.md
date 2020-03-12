@@ -24,6 +24,26 @@ requirements in this guide.
 Note that this guide is not a C++ tutorial: we assume that the reader is
 familiar with the language.
 
+## Background [DUNE VERSION]
+
+C++ is the main development language of DUNE's DAQ software
+processes. As every C++ programmer knows, the language has many
+powerful features, but this power brings with it complexity, which in
+turn can make code more bug-prone and harder to read and maintain.
+
+The goal of this guide is to manage this complexity by describing in
+detail the dos and don'ts of writing C++ code. These rules exist to
+keep the code base manageable while still allowing coders to use C++
+language features productively. While it will take a certain amount of
+time to learn these rules and adhering to them may mean that creating
+a piece of code that "just works" would take a little longer than it
+otherwise would, the payoff in terms of reduced debugging time and
+increased readability will be well worth it.
+
+Note that this guide is not a C++ tutorial: we assume that the reader is
+familiar with the language.
+
+
 ### Goals of the Style Guide
 
 Why do we have this document?
@@ -391,6 +411,31 @@ system-specific code small and localized. Example:
     #endif  // LANG_CXX11
 ```
 
+### Names and Order of Includes [DUNE VERSION]
+
+If the included header is the "related header" - meaning, you're editing foo.cc 
+and the head is foo.hh - put it before all the other headers
+
+All of a project's header files should be listed as descendants of the
+project's source directory without use of UNIX directory aliases `.`
+(the current directory) or `..` (the parent directory). For example,
+`google-awesome-project/src/base/logging.h` should be included as:
+
+```c++
+#include "base/logging.h"
+```
+
+
+You should include all the headers that define the symbols you rely
+upon, except in the unusual case of [forward
+declaration](#Forward_Declarations). If you rely on symbols from
+`bar.h`, don't count on the fact that you included `foo.h` which
+(currently) includes `bar.h`: include `bar.h` yourself, unless `foo.h`
+explicitly demonstrates its intent to provide you the symbols of
+`bar.h`.
+
+
+
 ## Scoping
 
 ### Namespaces
@@ -534,6 +579,95 @@ More complex `.cc` files might have additional details, like flags or using-decl
  ```
   - Do not use inline namespaces.
 
+### Namespaces [DUNE VERSION]
+
+With few exceptions ["few" or "no"?], place code in a namespace [Do we want to define appropriate namespaces here - e.g., everything goes into the "dune" namespace, and then we perhaps have nested namespaces with well-chosen names?]. Do not use *using-directives* (e.g. `using namespace foo`) as this risks name collisions and, worse, unexpected behavior when the "wrong" function/class is picked up by the compiler. On the other hand, using-declarations (e.g., `using heavily::nested:namespace::foo::FooClass` can be useful for improving readibility. For unnamed namespaces, see [Unnamed Namespaces and Static
+Variables](#Unnamed_Namespaces_and_Static_Variables).
+
+When creating nonmember functions which work with a class, keep in mind that these functions are part of the class's interface and therefore should be in the same namespace as the class.
+
+Namespaces should be used as follows:
+
+  - Follow the rules on [Namespace Names](#Namespace_Names).
+
+  - Terminate namespaces with comments as shown in the given examples.
+
+  - Namespaces wrap the entire source file after includes,
+    definitions/declarations
+    and forward declarations of classes from other namespaces.
+    
+ ```c++
+     // In the .hh file
+     namespace mynamespace {
+     
+     // All declarations are within the namespace scope.
+     // Notice the lack of indentation.
+     class MyClass {
+      public:
+       ...
+       void Foo();
+     };
+     
+     }  // namespace mynamespace
+ 
+     // In the .cc file
+     namespace mynamespace {
+     
+     // Definition of functions is within scope of the namespace.
+     void MyClass::Foo() {
+       ...
+     }
+     
+     }  // namespace mynamespace
+```
+
+More complex `.cc` files might have additional details, like using-declarations.
+  
+``` c++
+    #include "a.hh"
+    
+    namespace mynamespace {
+    
+    using ::foo::Bar;
+    
+    ...code for mynamespace...    // Code goes against the left margin.
+    
+    }  // namespace mynamespace
+```
+
+
+  - Do not declare anything in namespace `std`, including forward
+    declarations of standard library classes. Declaring entities in
+    namespace `std` is undefined behavior, i.e., not portable. To
+    declare entities from the standard library, include the appropriate
+    header file.
+   
+
+  - Do not use *Namespace aliases* at namespace scope in header files
+    except in explicitly marked internal-only namespaces, because
+    anything imported into a namespace in a header file becomes part of
+    the public API exported by that file.
+    
+  ``` c++  
+        // Shorten access to some commonly used names in .cc files.
+        namespace baz = ::foo::bar::baz;
+    
+        // Shorten access to some commonly used names (in a .h file).
+        namespace librarian {
+        namespace impl {  // Internal, not part of the API.
+        namespace sidetable = ::pipeline_diagnostics::sidetable;
+        }  // namespace impl
+        
+        inline void my_inline_function() {
+          // namespace alias local to a function (or method).
+          namespace baz = ::foo::bar::baz;
+          ...
+        }
+        }  // namespace librarian
+ ```
+
+
+
 ### Unnamed Namespaces and Static Variables
 
 When definitions in a `.cc` file do not need to be referenced outside
@@ -550,6 +684,21 @@ completely independent.
 Use of internal linkage in `.cc` files is encouraged for all code that
 does not need to be referenced elsewhere. Do not use internal linkage in
 `.h` files.
+
+Format unnamed namespaces like named namespaces. In the terminating
+comment, leave the namespace name empty:
+
+```c++
+    namespace {
+    ...
+    }  // namespace
+```
+
+### Unnamed Namespaces and Static Variables [DUNE VERSION]
+
+When definitions in a `.cc` file do not need to be referenced outside
+that file, place them in an unnamed namespace or declare them `static`.
+Do not use either of these constructs in `.h` files.
 
 Format unnamed namespaces like named namespaces. In the terminating
 comment, leave the namespace name empty:
@@ -586,6 +735,17 @@ unnecessary anyway.
 If you define a nonmember function and it is only needed in its `.cc`
 file, use [internal linkage](#Unnamed_Namespaces_and_Static_Variables)
 to limit its scope.
+
+### Nonmember, Static Member, and Global Functions [DUNE VERSION]
+
+-Use completely global functions rarely, and only if there's a compelling reason
+
+-If a nonmember function can accomplish what a member function can, prefer a nonmember function. This is because the less code a class's data is exposed to, the less opportunity there is for bugs.
+
+-Nonmember functions should always be in a namespace, and unless there's a compelling reason to violate this rule, to go in the same namespace as the class it works with
+
+-Static methods of a class should generally be closely related to
+instances of the class or the class's static data.
 
 ### Local Variables
 
@@ -646,6 +806,24 @@ outside that loop:
       f.DoSomething(i);
     }
 ```
+
+### Local Variables [DUNE VERSION]
+
+Declare local variables in as local a scope as possible, and as close to the
+first use as possible. Always initialize variables in the declaration.
+
+There is one caveat: if the variable is an object, its constructor is
+invoked every time it enters scope and is created, and its destructor is
+invoked every time it goes out of scope.
+
+``` c++
+// Inefficient implementation:
+for (int i = 0; i < 1000000; ++i) {
+  Foo f;  // My ctor and dtor get called 1000000 times each.
+  f.DoSomething(i);
+}
+```
+
 
 ### Static and Global Variables
 
@@ -928,6 +1106,8 @@ Classes are the fundamental unit of code in C++. Naturally, we use them
 extensively. This section lists the main dos and don'ts you should
 follow when writing a class.
 
+[The above opener adds no info whatsoever. Let's get rid of it]
+
 ### Doing Work in Constructors
 
 Avoid virtual method calls in constructors, and avoid initialization
@@ -964,6 +1144,15 @@ described in [TotW \#42](https://abseil.io/tips/42) . Avoid `Init()`
 methods on objects with no other states that affect which public methods
 may be called (semi-constructed objects of this form are particularly
 hard to work with correctly).
+
+
+### Doing Work in Constructors [DUNE VERSION]
+
+-Don't call any of a class's virtual functions in its constructor
+
+-If an error occurs that will prevent the class from being constructed, have it throw an exception. As its destructor won't execute in this scenario, make sure you clean up any resources the constructor allocated before throwing.
+
+-Initialize a class's member in the constructor's member initialization list rather than assign to it in the constructor's body. An exception to this might be if the member class's default constructor is much faster than its other constructors/assignment operator, but it's not guaranteed that it'll even need to be assigned to. 
 
 
 ### Implicit Conversions
